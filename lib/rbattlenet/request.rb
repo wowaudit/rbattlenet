@@ -11,10 +11,10 @@ module RBattlenet
       @headers['Authorization'] = "Bearer #{RBattlenet.option(:token)}" if RBattlenet.option(:token)
     end
 
-    def get(subjects, block_given)
+    def get(subjects, block_given, initial_field = :itself)
       subjects.each do |fields, subject|
         store = RBattlenet.option(:response_type) == :raw ? [] : RBattlenet::ResultCollection.new(RBattlenet.option(:response_type))
-        perform_request(block_given, store, subject, fields, *fields.find { |name, klass| name == :itself }) do |subject, data|
+        perform_request(block_given, store, subject, fields, initial_field, *fields.find { |name, klass| name == initial_field }) do |subject, data|
           yield(subject, data) if block_given
         end
       end
@@ -25,7 +25,7 @@ module RBattlenet
 
     private
 
-    def perform_request(block_given, store, subject, fields, name, klass)
+    def perform_request(block_given, store, subject, fields, initial_field, name, klass)
       uri = klass.is_a?(String) ? klass : klass.path(subject)
       request = Typhoeus::Request.new(Addressable::URI.parse(uri).normalize.to_s, headers: @headers, timeout: RBattlenet.option(:timeout), connecttimeout: RBattlenet.option(:timeout))
 
@@ -34,18 +34,18 @@ module RBattlenet
           @retried[uri] = (@retried[uri] || 0) + 1
           @hydra.queue response.request
         else
-          fetch_fields = fields.size > 1 && name == :itself && response.code == 200
+          fetch_fields = fields.size > 1 && name == initial_field && response.code == 200
 
           if RBattlenet.option(:response_type) == :raw
             store << response
 
-            if fetch_fields && subject.is_a?(Hash) && subject.key?(:timestamp)
+            if fetch_fields && subject.is_a?(Hash) && subject.key?(:timestamp) && initial_field == :itself
               result = Oj.load(response.body, mode: :compat, object_class: Hash, symbol_keys: true) rescue nil
               fetch_fields = result && (!result[:last_login_timestamp] || result[:last_login_timestamp] > subject[:timestamp])
             end
           else
             result = store.add(name, response)
-            if fetch_fields && subject.is_a?(Hash) && subject.key?(:timestamp)
+            if fetch_fields && subject.is_a?(Hash) && subject.key?(:timestamp) && initial_field == :itself
               fetch_fields = !result[:last_login_timestamp] || result[:last_login_timestamp] > subject[:timestamp]
             end
 
@@ -53,8 +53,8 @@ module RBattlenet
               @extra_requests_by_subject[subject] = klass.get_children(@headers, store, response)
             end
 
-            if data = store.complete(fields.size + (@extra_requests_by_subject[subject] || 0), !fetch_fields && name == :itself)
-              subject[:skipped] = (name == :itself && response.code == 200) if subject.is_a?(Hash) && fields.size > 1
+            if data = store.complete(fields.size + (@extra_requests_by_subject[subject] || 0), !fetch_fields && name == initial_field, initial_field)
+              subject[:skipped] = (name == initial_field && response.code == 200) if subject.is_a?(Hash) && fields.size > 1
               if block_given
                 yield subject, data
                 store = nil
@@ -66,8 +66,8 @@ module RBattlenet
 
           if fetch_fields
             fields.each do |field_name, field_class|
-              next if field_name == :itself
-              perform_request(block_given, store, subject, fields, field_name, field_class) do |subject, data|
+              next if field_name == initial_field
+              perform_request(block_given, store, subject, fields, initial_field, field_name, field_class) do |subject, data|
                 yield(subject, data) if block_given
               end
             end

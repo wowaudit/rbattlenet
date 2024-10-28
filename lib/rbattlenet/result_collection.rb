@@ -42,15 +42,15 @@ module RBattlenet
       data
     end
 
-    def complete(results_needed, skipped_or_done)
+    def complete(results_needed, skipped_or_done, initial_field)
       if @results.size == results_needed || skipped_or_done
-        base_result = @results.find { |result| result[:field] == :itself }
+        base_result = @results.find { |result| result[:field] == :itself } || @response_object.new
         (@results - [base_result]).each{ |result| base_result << result }
 
         if @status_codes.size == 1
           base_result[:status_code] = @status_codes.values.first
         else
-          base_result[:status_code] = @status_codes[:itself]
+          base_result[:status_code] = @status_codes[initial_field]
         end
         base_result[:status_codes] = @status_codes
         base_result

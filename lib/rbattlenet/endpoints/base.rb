@@ -11,7 +11,7 @@ module RBattlenet
         end
       end
 
-      def self.find(subjects, fields: [:itself])
+      def self.find(subjects, fields: [:itself], initial_field: :itself)
         raise RBattlenet::Errors::FindNotSupported.new unless defined?(path)
 
         if !fields.is_a? Array || (fields.map(&:to_sym) - SUPPORTED_FIELDS).any?
@@ -23,7 +23,7 @@ module RBattlenet
           [subject_fields.uniq.map{ |field| [field, send(field)] }, subject]
         end
 
-        RBattlenet::Request.new.get(payload, block_given?) do |subject, data|
+        RBattlenet::Request.new.get(payload, block_given?, initial_field) do |subject, data|
           yield(subject, data) if block_given?
         end
       end
